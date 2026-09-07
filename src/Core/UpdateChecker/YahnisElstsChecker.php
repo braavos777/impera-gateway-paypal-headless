@@ -26,7 +26,7 @@ class YahnisElstsChecker
             'impera-gateway-paypal-headless'
         );
 
-        
+
         $updateChecker->getVcsApi()->enableReleaseAssets();
 
     }
