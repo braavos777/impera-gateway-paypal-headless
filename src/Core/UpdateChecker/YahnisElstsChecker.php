@@ -20,18 +20,13 @@ class YahnisElstsChecker
     public function checkUpdates() : void
     {
 
-        if ( ! defined( 'GITHUB_ACCESS_TOKEN' ) || empty( GITHUB_ACCESS_TOKEN ) ){
-            return;
-        }
-
-
         $updateChecker = PucFactory::buildUpdateChecker(
             'https://github.com/Dripheat/impera-gateway-paypal-headless/',
             IMPERA_PPH_PLUGIN_DIR . '/impera-gateway-paypal-headless.php',
             'impera-gateway-paypal-headless'
         );
 
-        // Использовать GitHub Releases (не просто ветку)
+        
         $updateChecker->getVcsApi()->enableReleaseAssets();
 
     }
