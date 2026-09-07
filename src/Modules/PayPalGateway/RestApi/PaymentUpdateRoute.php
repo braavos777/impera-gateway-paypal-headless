@@ -71,6 +71,8 @@ final class PaymentUpdateRoute extends AbstractRoute
                 ->get(OrderCompletionService::class)
                 ->complete($order, $paymentResponse, 'proxy-webhook');
 
+            do_action('impera_gateway_paypal_headless_webhook_payment_update', $order, $paymentResponse, $settled);
+            
             return new WP_REST_Response([
                 'success'     => $settled,
                 'wc_order_id' => $order->get_id(),
