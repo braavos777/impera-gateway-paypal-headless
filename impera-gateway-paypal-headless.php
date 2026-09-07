@@ -37,20 +37,6 @@ if ( WP_DEBUG ) {
 //Config
 require_once(plugin_dir_path(__FILE__) . 'bootstrap.php');
 
-if ( ! defined( 'GITHUB_ACCESS_TOKEN' ) || empty( GITHUB_ACCESS_TOKEN ) ) {
-    add_action( 'admin_notices', static function () {
-        ?>
-        <div class="notice notice-error">
-            <p>
-                <strong>Impera Gateway PayPal (Headless) Plugin:</strong>
-                The <code>GITHUB_ACCESS_TOKEN</code> constant is not defined.
-                GitHub updates and private repository access will not work until the token is configured.
-            </p>
-        </div>
-        <?php
-    } );
-}
-
 use ImperaPayPalHl\Core\CoreSetupPlugin;
 use ImperaPayPalHl\Core\ImperaPPHMain;
 
