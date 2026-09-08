@@ -41,24 +41,28 @@ final class OrderCompletionService
         // that was paid, and returning early on those would drop every refund
         // made in the PayPal dashboard.
         if ($paymentResponse->isRefunded()) {
+            $this->logger->debug('OrderCompletionService::complete: order is refunded, not recording it.');
             return $this->recordRefund($order, $paymentResponse, $source);
         }
 
         // Already collected. A refresh, a double redirect, or a webhook racing
         // the browser must never charge or transition twice.
         if ($order->is_paid()) {
+            $this->logger->debug('OrderCompletionService::complete: order already paid, not recording it.');
             return true;
         }
 
         // Money arriving for an order nobody can settle any more. Refusing is
         // right, but staying quiet is not: the customer really has been charged.
         if ($order->has_status(['cancelled', 'refunded'])) {
+            $this->logger->debug('OrderCompletionService::complete: order is cancelled or refunded, not recording it.');
             $this->reportMoneyAgainstClosedOrder($order, $paymentResponse, $source);
 
             return false;
         }
 
         if ($paymentResponse->isAmountMismatch()) {
+            $this->logger->debug('OrderCompletionService::complete: order amount mismatch, not recording it.');
             $this->reportAmountMismatch($order, $paymentResponse, $source);
 
             return false;
@@ -68,6 +72,7 @@ final class OrderCompletionService
         // asked for. This compares against what the order is worth now - a total
         // that changed after the payment started must not settle either.
         if ($paymentResponse->isPaid() && !$this->amountMatchesOrder($order, $paymentResponse)) {
+            $this->logger->debug('OrderCompletionService::complete: order amount mismatch, not recording it.');
             $this->reportAmountMismatch($order, $paymentResponse, $source);
 
             return false;
@@ -104,7 +109,7 @@ final class OrderCompletionService
             (string) $order->get_meta(IMPERA_WC_ORDER_PPH_PROXY_DOMAIN)
         ));
         $order->add_order_note((string) $paymentResponse);
-
+        $this->logger->info(sprintf('Order %d settled by PayPal (%s)', $order->get_id(), $source));
         $order->payment_complete((string) $paymentResponse->getCaptureId());
 
         $order->add_order_note(sprintf('Order PayPal Payment Complete (%s)', $source));
@@ -121,6 +126,7 @@ final class OrderCompletionService
         $this->saveMeta($order, $paymentResponse);
 
         if (!$order->has_status('on-hold')) {
+            $this->logger->info(sprintf('Set on-hold PayPal  has not cleared the payment yet source: %s | Reason: %s', $source, $paymentResponse->getErrorMessage() ?: 'not given'));
             $order->update_status('on-hold', sprintf(
                 'PayPal has not cleared the payment yet (%s). Reason: %s',
                 $source,
