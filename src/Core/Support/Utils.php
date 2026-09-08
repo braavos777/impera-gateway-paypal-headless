@@ -184,7 +184,7 @@ final class Utils
      */
     public static function homeDomain(): string
     {
-        $host = wp_parse_url(home_url(), PHP_URL_HOST);
+        $host = wp_parse_url(site_url(), PHP_URL_HOST);
 
         if (!is_string($host) || $host === '') {
             return '';

@@ -207,7 +207,7 @@ final class PaymentProcessor
             IMPERA_PPH_RETURN_FLAG => '1',
             'wc_order_id'          => $order->get_id(),
             'order_key'            => $order->get_order_key(),
-        ], home_url('/'));
+        ], site_url('/'));
     }
 
     private function buildCancelUrl(WC_Order $order): string
@@ -216,7 +216,7 @@ final class PaymentProcessor
             IMPERA_PPH_CANCEL_FLAG => '1',
             'wc_order_id'          => $order->get_id(),
             'order_key'            => $order->get_order_key(),
-        ], home_url('/'));
+        ], site_url('/'));
     }
 
     /**
