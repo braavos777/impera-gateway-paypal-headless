@@ -60,7 +60,11 @@ final class PaymentProcessor
             cancelUrl: $this->buildCancelUrl($order)
         );
 
+        $this->logger->debug('Create order DTO: ' , $dto->jsonSerialize());
+
         $createResponse = $this->requestOrder($order, Utils::buildDomain($proxyDomain), $dto);
+
+        $this->logger->debug('Create order Response: ' , $createResponse->toArray());
 
         $this->rememberOrder($order, $proxyDomain, $createResponse, $settings->getMode());
 
@@ -74,6 +78,8 @@ final class PaymentProcessor
         if (!headers_sent()) {
             header('Referrer-Policy: no-referrer');
         }
+
+        $this->logger->debug('Redirect to PayPal');
 
         return [
             'result'   => 'success',
@@ -103,6 +109,8 @@ final class PaymentProcessor
 
         $dto = OrderStatusDto::create($ppOrderId, $order->get_id(), $mode, $capture);
 
+        $this->logger->debug('Order status DTO: ' , $dto->jsonSerialize());
+
         $response = $this->post(
             Utils::buildDomain($proxyDomain) . self::ORDER_STATUS_ENDPOINT,
             $dto->jsonSerialize()
@@ -116,6 +124,8 @@ final class PaymentProcessor
 
             return PaymentResponse::failed($ppOrderId, $order->get_id(), $message);
         }
+
+        $this->logger->debug('Order status Response: ' , Utils::getResponseJson($response));
 
         return PaymentResponse::fromArray(Utils::getResponseJson($response));
     }

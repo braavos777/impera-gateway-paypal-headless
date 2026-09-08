@@ -95,4 +95,18 @@ final class CreateOrderResponse
             $this->mode
         );
     }
+
+    public function toArray(): array
+    {
+        return [
+            'success' => $this->success,
+            'pp_order_id' => $this->ppOrderId,
+            'redirect_url' => $this->redirectUrl,
+            'approve_url' => $this->approveUrl,
+            'order_status' => $this->orderStatus,
+            'mode' => $this->mode,
+            'error_code' => $this->errorCode,
+            'error_message' => $this->errorMessage,
+        ];
+    }
 }

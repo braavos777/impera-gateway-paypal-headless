@@ -38,6 +38,9 @@ final class ReturnListener
         $returnProcessor = ImperaPPHContainer()->get(ReturnProcessor::class);
 
         if ($isReturn) {
+
+            ImperaPPHLogger()->debug('ReturnListener: Return from PayPal');
+
             $returnProcessor->handleReturn(wp_unslash($_GET));
 
             return;

@@ -55,6 +55,7 @@ final class ReturnProcessor
 
         // Already handled - a refresh or a double redirect must not charge twice.
         if ($order->is_paid()) {
+            $this->logger->debug('PayPal return: order already paid, redirecting to thank you page.');
             $this->redirectToThankYou($order);
         }
 
@@ -90,7 +91,7 @@ final class ReturnProcessor
 
         if ($settled) {
             $this->clearCart();
-
+            $this->logger->debug('PayPal return: order settled, redirecting to thank you page.');
             $this->redirectToThankYou($order);
         }
 
@@ -98,11 +99,12 @@ final class ReturnProcessor
         // declined instrument leaves an order that is still going somewhere.
         if ($paymentResponse->isPending()) {
             $this->clearCart();
-
+            $this->logger->debug('PayPal return: order still pending, redirecting to thank you page.');
             $this->redirectToThankYou($order);
         }
 
         if ($paymentResponse->needsPayerAction()) {
+            $this->logger->debug('PayPal return: order needs payer action, redirecting to thank you page.');
             $this->failAndRedirect(
                 $order,
                 'PayPal could not use that payment method. Please try again and choose another one.',
@@ -111,6 +113,7 @@ final class ReturnProcessor
         }
 
         if ($paymentResponse->isAmountMismatch()) {
+            $this->logger->debug('PayPal return: order amount mismatch, redirecting to thank you page.');
             $this->failAndRedirect(
                 $order,
                 'The amount PayPal charged does not match your order. We have been notified — please contact us before paying again.',
@@ -194,7 +197,7 @@ final class ReturnProcessor
         }
 
         wc_add_notice($notice, 'error');
-
+        $this->logger->debug('ReturnProcessor::failAndRedirect failAndRedirect redirecting to thank you page.');
         $this->redirectToThankYou($order);
     }
 
@@ -230,6 +233,8 @@ final class ReturnProcessor
          * @return string
          */
         $return_url = apply_filters( 'woocommerce_get_return_url', $return_url, $order );
+
+        $this->logger->debug("ReturnProcessor::redirectToThankYou redirecting to thank you page. return_url: $return_url");
 
         wp_safe_redirect($return_url);
         exit;

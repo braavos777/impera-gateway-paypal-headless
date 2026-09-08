@@ -58,6 +58,7 @@ final class PaymentUpdateRoute extends AbstractRoute
         if (!$order instanceof WC_Order) {
             // 200 on purpose - the payment is real and recorded on the proxy, so
             // a retry storm would not help. The mismatch is logged for a human.
+            $this->logger->debug(sprintf('PayPal payment-update: order %d not found or PayPal order mismatch.', $wcOrderId));
             return new WP_REST_Response([
                 'success'       => false,
                 'error_message' => 'Order not found or PayPal order mismatch.',
@@ -66,11 +67,11 @@ final class PaymentUpdateRoute extends AbstractRoute
 
         try {
             $paymentResponse = PaymentResponse::fromArray($params);
-
+            $this->logger->debug('PaymentUpdateRoute | PayPal payment-update | $paymentResponse', $params);
             $settled = ImperaPPHContainer()
                 ->get(OrderCompletionService::class)
                 ->complete($order, $paymentResponse, 'proxy-webhook');
-
+            $this->logger->debug('PaymentUpdateRoute | PayPal payment-update | $settled', ['settled' => $settled ? 'yes' : 'no']);
             do_action('impera_gateway_paypal_headless_webhook_payment_update', $order, $paymentResponse, $settled);
 
             return new WP_REST_Response([
