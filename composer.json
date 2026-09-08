@@ -1,7 +1,7 @@
 {
   "name": "impera/impera-gateway-paypal-headless",
   "description": "PayPal redirect gateway for WooCommerce, paid through the Impera proxy",
-  "version": "1.0.4",
+  "version": "1.0.5",
   "type": "wordpress-plugin",
   "autoload": {
     "psr-4": {
