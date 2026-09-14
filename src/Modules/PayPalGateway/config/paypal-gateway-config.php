@@ -50,6 +50,23 @@ return [
                 'required'  => 'required'
             ],
         ],
+        'checkout_flow'         => [
+            'title'       => 'Checkout flow',
+            'type'        => 'select',
+            'default'     => 'redirect',
+            'options'     => [
+                'redirect' => 'Redirect — the customer leaves for PayPal and comes back',
+                'iframe'   => 'Embedded buttons — a headless storefront frames the proxy',
+            ],
+            'description' => 'Embedded buttons need the storefront origin below, and that origin has to be listed on the proxy under <code>PayPal Redirect &rarr; Storefronts</code>.',
+        ],
+        'storefront_origin'     => [
+            'title'       => 'Storefront origin',
+            'type'        => 'text',
+            'description' => 'Only for the embedded flow: the origin of the page that frames the PayPal buttons, with its scheme and, when it is not the default, its port — <code>https://shop.example.com</code> or <code>http://localhost:3000</code>. Leave empty when the storefront is this site.',
+            'default'     => '',
+            'placeholder' => 'https://shop.example.com',
+        ],
         'sandbox'               => [
             'title'       => 'Sandbox',
             'label'       => 'Pay through the PayPal sandbox',

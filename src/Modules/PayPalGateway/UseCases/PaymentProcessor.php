@@ -9,6 +9,7 @@ namespace ImperaPayPalHl\Modules\PayPalGateway\UseCases;
 
 use ImperaPayPalHl\Core\Contract\LoggerInterface;
 use ImperaPayPalHl\Core\Support\Utils;
+use ImperaPayPalHl\Modules\PayPalGateway\DTO\CaptureOrderDto;
 use ImperaPayPalHl\Modules\PayPalGateway\DTO\CreateOrderDto;
 use ImperaPayPalHl\Modules\PayPalGateway\DTO\OrderStatusDto;
 use ImperaPayPalHl\Modules\PayPalGateway\Exceptions\PaymentProcessException;
@@ -25,8 +26,9 @@ use WP_Error;
  */
 final class PaymentProcessor
 {
-    private const CREATE_ORDER_ENDPOINT = '/?rest_route=/impera-proxy-payment/v1/paypal-redirect/create-order';
-    private const ORDER_STATUS_ENDPOINT = '/?rest_route=/impera-proxy-payment/v1/paypal-redirect/order-status';
+    private const CREATE_ORDER_ENDPOINT  = '/?rest_route=/impera-proxy-payment/v1/paypal-redirect/create-order';
+    private const ORDER_STATUS_ENDPOINT  = '/?rest_route=/impera-proxy-payment/v1/paypal-redirect/order-status';
+    private const CAPTURE_ORDER_ENDPOINT = '/?rest_route=/impera-proxy-payment/v1/paypal-redirect/capture-order';
 
     private LoggerInterface $logger;
 
@@ -128,6 +130,90 @@ final class PaymentProcessor
         $this->logger->debug('Order status Response: ' , Utils::getResponseJson($response));
 
         return PaymentResponse::fromArray(Utils::getResponseJson($response));
+    }
+
+    /**
+     * Collects a payment the customer already approved inside the iframe.
+     *
+     * The embedded flow arrives here with the PayPal order id and nothing else
+     * settled: no money has moved, and the proxy has never been told what the
+     * cart was worth - the order was created from figures the browser chose. So
+     * this request carries WooCommerce's own total, signed, and the proxy
+     * refuses to report the order paid unless PayPal collected exactly that.
+     *
+     * @param string $paymentSource the button the customer used, as the
+     *                              storefront reported it. Only a hint for the
+     *                              order note - the authoritative value comes
+     *                              back from PayPal in the response.
+     */
+    public function captureFrameOrder(
+        WC_Order $order,
+        string $ppOrderId,
+        string $paymentSource,
+        WcGatewaySettings $settings
+    ): PaymentResponse {
+        $proxyDomain = $settings->getProxyDomain();
+
+        $this->assertProxyDomain($order, $proxyDomain);
+        $this->assertSharedKey($order, $settings);
+
+        // Recorded before the call, not after. A capture that succeeds but
+        // whose answer never arrives still has to leave the order able to find
+        // its payment - refunds and webhook pushes both read these.
+        $this->rememberFrameOrder($order, $proxyDomain, $ppOrderId, $paymentSource, $settings);
+
+        $dto = CaptureOrderDto::fromWcOrder($order, $ppOrderId, $settings);
+
+        $this->logger->debug('Capture order DTO: ', $dto->jsonSerialize());
+
+        $response = $this->post(
+            Utils::buildDomain($proxyDomain) . self::CAPTURE_ORDER_ENDPOINT,
+            $dto->jsonSerialize()
+        );
+
+        if (is_wp_error($response)) {
+            $message = 'PayPal capture order request error: ' . $response->get_error_message();
+
+            $order->add_order_note($message);
+            $this->logger->error($message);
+
+            return PaymentResponse::failed($ppOrderId, $order->get_id(), $message);
+        }
+
+        $this->logger->debug('Capture order Response: ', Utils::getResponseJson($response));
+
+        return PaymentResponse::fromArray(Utils::getResponseJson($response));
+    }
+
+    /**
+     * What an embedded-flow order has to remember to be able to finish, or be
+     * refunded, later. The redirect flow writes the same things in
+     * rememberOrder(), at the point where it has a create response to write.
+     */
+    private function rememberFrameOrder(
+        WC_Order $order,
+        string $proxyDomain,
+        string $ppOrderId,
+        string $paymentSource,
+        WcGatewaySettings $settings
+    ): void {
+        $order->update_meta_data(IMPERA_WC_ORDER_PPH_PROXY_DOMAIN, $proxyDomain);
+        $order->update_meta_data(IMPERA_WC_ORDER_PPH_ORDER_ID, $ppOrderId);
+        $order->update_meta_data(IMPERA_WC_ORDER_PPH_MODE, $settings->getMode());
+        $order->update_meta_data(IMPERA_WC_ORDER_PPH_CURRENCY, $order->get_currency());
+
+        if ($paymentSource !== '') {
+            $order->update_meta_data(IMPERA_WC_ORDER_PPH_PAYMENT_SOURCE, $paymentSource);
+        }
+
+        $order->save_meta_data();
+
+        $order->add_order_note(sprintf(
+            'Collecting PayPal order %s through proxy %s (embedded checkout, %s)',
+            $ppOrderId,
+            $proxyDomain,
+            $paymentSource !== '' ? $paymentSource : 'unknown source'
+        ));
     }
 
     private function requestOrder(WC_Order $order, string $proxyUrl, CreateOrderDto $dto): CreateOrderResponse

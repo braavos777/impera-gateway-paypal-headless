@@ -8,6 +8,7 @@ declare(strict_types=1);
 namespace ImperaPayPalHl\Modules\PayPalGateway\DTO;
 
 use ImperaPayPalHl\Core\Support\Utils;
+use ImperaPayPalHl\Modules\PayPalGateway\Support\OrderParts;
 use ImperaPayPalHl\Modules\PayPalGateway\WcGatewaySettings;
 use JsonSerializable;
 use WC_Order;
@@ -56,14 +57,14 @@ final class CreateOrderDto implements JsonSerializable
 
         return new self(
             wcOrderId:          $order->get_id(),
-            orderInvoice:       $settings->getInvoicePrefix() . $order->get_order_number(),
+            orderInvoice:       OrderParts::invoiceId($order, $settings),
             merchantSite:       Utils::homeDomain(),
-            amount:             self::formatAmount($order->get_total()),
+            amount:             OrderParts::amount($order->get_total()),
             currency:           $order->get_currency(),
             brandName:          $settings->getBrandName(),
             softDescriptor:     $settings->getSoftDescriptor(),
-            description:        self::buildDescription($order, $settings),
-            items:              self::buildItems($order, $settings),
+            description:        OrderParts::description($order, $settings),
+            items:              OrderParts::items($order, $settings),
             locale:             self::buildLocale(),
             shippingPreference: $shippingPreference,
             // Only worth sending when PayPal is going to be told to use it.
@@ -76,91 +77,6 @@ final class CreateOrderDto implements JsonSerializable
             cancelUrl:          $cancelUrl,
             sandbox:            $settings->isSandbox(),
         );
-    }
-
-    /**
-     * The one line item the order is charged as. Its value has to be formatted
-     * exactly like the amount the proxy sends alongside it - PayPal compares
-     * item_total against the total to the cent, and "10.5" against "10.50" is
-     * a 422.
-     */
-    private static function buildItems(WC_Order $order, WcGatewaySettings $settings): array
-    {
-        return [
-            [
-                'name'        => self::buildProductName($order, $settings),
-                'description' => self::buildProductNames($order, $settings),
-                'unit_amount' => [
-                    'currency_code' => $order->get_currency(),
-                    'value'         => self::formatAmount($order->get_total()),
-                ],
-                'quantity'    => '1',
-        ]
-        ];
-    }
-
-    /**
-     * The line item title, built from the shop's title template.
-     * PayPal allows 127 characters on an item name.
-     */
-    private static function buildProductName(WC_Order $order, WcGatewaySettings $settings): string
-    {
-        $firstItemName = '';
-
-        foreach ($order->get_items() as $item) {
-            $firstItemName = $item->get_name();
-            break;
-        }
-
-        $title = trim(Utils::applyTitleShortcodes(
-            $settings->getProductTitleSetting(),
-            $firstItemName,
-            $order->get_id()
-        ));
-
-        if ($title === '') {
-            $title = sprintf('Order #%d', $order->get_id());
-        }
-
-        return mb_substr($title, 0, 127);
-    }
-
-    /**
-     * Human readable contents of the cart, used as the line item description.
-     * PayPal allows 2048 characters there.
-     */
-    private static function buildProductNames(WC_Order $order, WcGatewaySettings $settings): string
-    {
-        $parts = [];
-
-        foreach ($order->get_items() as $item) {
-            $name = Utils::applyTitleShortcodes(
-                $settings->getProductTitleSetting(),
-                $item->get_name(),
-                $order->get_id()
-            );
-            $parts[] = $name . ' x ' . $item->get_quantity();
-        }
-
-        return mb_substr(trim(implode(', ', $parts)), 0, 2048);
-    }
-
-    /**
-     * What the buyer reads on the PayPal page: the same cart list, cut to the
-     * 127 characters PayPal allows on a purchase unit description.
-     */
-    private static function buildDescription(WC_Order $order, WcGatewaySettings $settings): string
-    {
-        return mb_substr(self::buildProductNames($order, $settings), 0, 127);
-    }
-
-    /**
-     * PayPal wants the currency's own precision - two decimals for USD, none
-     * for JPY - and refuses anything else.
-     */
-    private static function formatAmount(mixed $value): string
-    {
-        return (string) wc_format_decimal($value, wc_get_price_decimals());
     }
 
     /**

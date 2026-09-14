@@ -10,14 +10,28 @@ namespace ImperaPayPalHl\Modules\PayPalGateway;
 use ImperaPayPalHl\Core\Contract\LoggerInterface;
 use ImperaPayPalHl\Modules\PayPalGateway\Exceptions\PaymentProcessException;
 use ImperaPayPalHl\Modules\PayPalGateway\Exceptions\RefundProcessException;
+use ImperaPayPalHl\Modules\PayPalGateway\UseCases\OrderCompletionService;
 use ImperaPayPalHl\Modules\PayPalGateway\UseCases\PaymentProcessor;
 use ImperaPayPalHl\Modules\PayPalGateway\UseCases\RefundProcessor;
 use Throwable;
+use WC_Order;
 use WC_Payment_Gateway;
 use WP_Error;
 
 /**
- * An ordinary WooCommerce redirect gateway with a fixed id.
+ * A WooCommerce gateway with a fixed id, serving two checkouts.
+ *
+ * In the redirect flow it behaves like any other redirect gateway: it asks the
+ * proxy for a PayPal order and hands WooCommerce somewhere to send the customer.
+ *
+ * In the embedded flow the payment has already been approved by the time this
+ * runs - a storefront framed the proxy's buttons, the customer clicked one, and
+ * the PayPal order id came back in the checkout POST. There is nothing to
+ * redirect to; there is money to collect.
+ *
+ * Which branch runs is decided by what arrived, not by the setting. An order id
+ * in the POST means the customer has already approved a payment, and the
+ * redirect branch would create a second one and abandon the first.
  *
  * It renders no HTML of its own and hooks no checkout output, which is what lets
  * the same gateway serve the classic checkout, the Blocks checkout's redirect
@@ -78,6 +92,12 @@ class PayPalGateway extends WC_Payment_Gateway
         do_action('impera_pph_gateway_process_payment_start', $order);
 
         try {
+            $ppOrderId = $this->approvedOrderId();
+
+            if ($ppOrderId !== '') {
+                return $this->completeApprovedOrder($order, $ppOrderId);
+            }
+
             return $this->paymentProcessor->process($order, $this->gatewaySettings);
         } catch (PaymentProcessException $e) {
             $message = $e->getErrorMessage();
@@ -94,6 +114,78 @@ class PayPalGateway extends WC_Payment_Gateway
         wc_add_notice($message, 'error');
 
         $order->update_status('failed');
+
+        return [
+            'result'   => 'failure',
+            'redirect' => '',
+            'reload'   => true, // This flag will force WooCommerce JS to refresh the page
+        ];
+    }
+
+    /**
+     * The PayPal order the storefront approved before it submitted the
+     * checkout, under the same field name the classic embedded checkout posts.
+     *
+     * Empty means the redirect flow: nothing has been approved yet.
+     */
+    private function approvedOrderId(): string
+    {
+        $value = $_POST['impera-paypal-payment-order-id'] ?? '';
+
+        // An array is what a crafted request like ...order-id[]= sends, and a
+        // cast on one is a fatal under strict_types.
+        return is_scalar($value) ? wc_clean(wp_unslash((string) $value)) : '';
+    }
+
+    /**
+     * Collects a payment the customer approved inside the iframe.
+     *
+     * The money moves on the proxy, which checks what PayPal actually took
+     * against the total sent from here before it will call the order paid - the
+     * amount the PayPal order was created with came from a browser and is worth
+     * nothing on its own.
+     *
+     * Nothing is thrown when the payment does not settle. OrderCompletionService
+     * has already put the order wherever the answer justified - on-hold for a
+     * capture PayPal is still reviewing, a note and no payment for an amount
+     * mismatch - and the catch block around the caller would overwrite all of
+     * that with 'failed', turning a payment that is merely still settling into a
+     * dead order.
+     */
+    private function completeApprovedOrder(WC_Order $order, string $ppOrderId): array
+    {
+        $paymentSource = $_POST['impera-paypal-payment-source'] ?? '';
+        $paymentSource = is_scalar($paymentSource) ? wc_clean(wp_unslash((string) $paymentSource)) : '';
+
+        $paymentResponse = $this->paymentProcessor->captureFrameOrder(
+            $order,
+            $ppOrderId,
+            $paymentSource,
+            $this->gatewaySettings
+        );
+
+        /** @var OrderCompletionService $completionService */
+        $completionService = ImperaPPHContainer()->get(OrderCompletionService::class);
+
+        if ($completionService->complete($order, $paymentResponse, 'frame-capture')) {
+            return [
+                'result'   => 'success',
+                'redirect' => $this->get_return_url($order),
+            ];
+        }
+
+        $this->logger->error(sprintf(
+            'PayPal order %s did not settle WC order %d: %s (%s)',
+            $ppOrderId,
+            $order->get_id(),
+            $paymentResponse->getPaymentStatus(),
+            (string) $paymentResponse->getErrorMessage()
+        ));
+
+        wc_add_notice(
+            'We cannot process your payment right now, please try another payment method.[FC]',
+            'error'
+        );
 
         return [
             'result'   => 'failure',
@@ -146,6 +238,12 @@ class PayPalGateway extends WC_Payment_Gateway
         }
 
         if ($this->gatewaySettings->getSharedKey() === '') {
+            return false;
+        }
+
+        // Without an origin the proxy refuses to build the iframe link at all,
+        // so the method would render as a frame that never loads.
+        if ($this->gatewaySettings->isIframeFlow() && $this->gatewaySettings->getStorefrontOrigin() === '') {
             return false;
         }
 

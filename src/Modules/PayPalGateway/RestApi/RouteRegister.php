@@ -15,6 +15,7 @@ final class RouteRegister extends ApiEndpointsRegister
     {
         return [
             PaymentUpdateRoute::class,
+            HeadlessRoute::class,
         ];
     }
 }
