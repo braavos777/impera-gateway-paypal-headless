@@ -5,7 +5,7 @@
  * Description: PayPal redirect checkout for WooCommerce, paid through the Impera proxy. The shop never holds PayPal credentials; orders are settled by a signed server-to-server webhook.
  * Author: Impera
  * Author URI:
- * Version: 1.0.6
+ * Version: 1.0.7
  *
  * This action hook registers our PHP class as a WooCommerce payment gateway
  */
