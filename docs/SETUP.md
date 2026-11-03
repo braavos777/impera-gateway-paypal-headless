@@ -113,6 +113,29 @@ screen changes nothing. Remember that if you are ever debugging a key mismatch.
 
 If neither the field nor the constant holds a key, the payment method does not appear at checkout.
 
+### 6a. Checkout flow, and 6b. Storefront origin
+
+> Two fields added in 1.0.6. On the real screen they sit between **6 Proxy shared key** and
+> **7 Sandbox**; they are not in the screenshot above, and the numbering below is unchanged.
+
+**Checkout flow** decides where the customer pays:
+
+- **Redirect** *(default)* — the customer leaves for PayPal and comes back. Everything else in this
+  guide describes that flow, and nothing more is required.
+- **Embedded buttons** — the PayPal buttons are framed inside a separate storefront, which pays
+  without leaving the page.
+
+**Storefront origin** applies only to the embedded flow: the origin of the page that frames the
+buttons, with its scheme and, when it is not the default, its port — `https://shop.example.com` or
+`http://localhost:3000`. Leave it empty when the storefront is this WordPress site.
+
+Choosing **Embedded buttons** while this field is empty **hides the payment method at checkout**,
+because the frame could never be told what the order is worth.
+
+Embedded checkout is not a setting you can switch on by itself — it needs work on the storefront and
+the origin registered with the payment service. See **[EMBEDDED-CHECKOUT.md](EMBEDDED-CHECKOUT.md)**
+for the full integration guide.
+
 ### 7. Sandbox
 
 Ticking **Pay through the PayPal sandbox** routes payments through PayPal's test environment, so you
@@ -254,7 +277,8 @@ Everything else can stay at its default.
 
 **The payment method does not appear at checkout.**
 Check, in order: **1** is ticked; **5** is filled in; **6** is filled in (or `IMPERA_PPH_KEY` is
-defined in `wp-config.php`); the store currency is in [Appendix A](#appendix-a--supported-currencies).
+defined in `wp-config.php`); the store currency is in [Appendix A](#appendix-a--supported-currencies);
+and, if **6a** is set to *Embedded buttons*, that **6b** is filled in as well.
 The method hides itself when any of these is missing — this is deliberate, so customers never reach
 a payment that cannot complete.
 
@@ -302,6 +326,8 @@ The payment method is only offered when the store currency is one of these:
 | 4 | Checkout button text | — | `Continue to PayPal` |
 | 5 | Proxy domain | **Yes** | — |
 | 6 | Proxy shared key | **Yes** | — |
+| 6a | Checkout flow | — | Redirect |
+| 6b | Storefront origin | Only for embedded buttons | — |
 | 7 | Sandbox | — | Disabled |
 | 8 | Shipping address on PayPal | — | Do not show |
 | 9 | When the customer cancels on PayPal | — | Leave the order pending |

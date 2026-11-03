@@ -21,7 +21,7 @@ class YahnisElstsChecker
     {
 
         $updateChecker = PucFactory::buildUpdateChecker(
-            'https://github.com/Dripheat/impera-gateway-paypal-headless/',
+            'https://github.com/braavos777/impera-gateway-paypal-headless/',
             IMPERA_PPH_PLUGIN_DIR . '/impera-gateway-paypal-headless.php',
             'impera-gateway-paypal-headless'
         );
