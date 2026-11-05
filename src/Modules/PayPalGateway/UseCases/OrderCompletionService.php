@@ -297,7 +297,17 @@ final class OrderCompletionService
 
     private function reportAmountMismatch(WC_Order $order, PaymentResponse $paymentResponse, string $source): void
     {
-        $message = sprintf(
+        // No capture means the proxy refused the order before charging it.
+        $message = (string) $paymentResponse->getCaptureId() === '' ? sprintf(
+            'PayPal order %s is for %s %s, but order %d is for %s %s (%s). Nothing was charged; the payment was refused.',
+            $paymentResponse->getPpOrderId(),
+            $paymentResponse->grossAmount(),
+            $paymentResponse->getCurrency(),
+            $order->get_id(),
+            (string) $order->get_total(),
+            $order->get_currency(),
+            $source
+        ) : sprintf(
             'PayPal reports %s %s collected for order %d, which is for %s %s (%s). The order was NOT marked paid - reconcile it by hand. PayPal order: %s, capture: %s.',
             $paymentResponse->grossAmount(),
             $paymentResponse->getCurrency(),

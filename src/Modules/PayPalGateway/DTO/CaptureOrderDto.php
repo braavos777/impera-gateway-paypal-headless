@@ -38,6 +38,7 @@ final class CaptureOrderDto implements JsonSerializable
         public readonly string $currency,
         public readonly string $invoiceId,
         public readonly array $items,
+        public readonly string $softDescriptor,
     ) {}
 
     public static function fromWcOrder(WC_Order $order, string $ppOrderId, WcGatewaySettings $settings): self
@@ -54,6 +55,9 @@ final class CaptureOrderDto implements JsonSerializable
             // can be read back from the PayPal dashboard as something more than
             // a bare total.
             items:        OrderParts::items($order, $settings),
+            // Patched onto the PayPal order before capture, like the items -
+            // the order was created by the browser, which never sends it.
+            softDescriptor: $settings->getSoftDescriptor(),
         );
     }
 
@@ -65,10 +69,11 @@ final class CaptureOrderDto implements JsonSerializable
             'merchant_site' => $this->merchantSite,
             'mode'          => $this->mode,
             'order_parts'   => [
-                'amount'     => $this->amount,
-                'currency'   => $this->currency,
-                'invoice_id' => $this->invoiceId,
-                'items'      => $this->items,
+                'amount'          => $this->amount,
+                'currency'        => $this->currency,
+                'invoice_id'      => $this->invoiceId,
+                'items'           => $this->items,
+                'soft_descriptor' => $this->softDescriptor,
             ],
         ];
     }
