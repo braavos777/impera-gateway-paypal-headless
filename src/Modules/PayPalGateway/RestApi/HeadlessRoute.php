@@ -88,12 +88,23 @@ class HeadlessRoute extends AbstractRoute
 
         $baseUrl = Utils::buildDomain($proxyDomain);
 
+        // Only gets the page rendered. The proxy issues a session of its own
+        // behind it, and that is what actually carries the shop, the currency
+        // and the environment.
+        $client = StringUtil::generateRandomString(self::CLIENT_TOKEN_LENGTH);
+
+        // The proxy logs the same client value when the frame is opened
+        // ("PayPal Frame | link requested"), so the two logs line up.
+        $this->logger->info(sprintf(
+            'HeadlessRoute | pp-link issued | client=%s proxy=%s storefront=%s',
+            $client,
+            $baseUrl,
+            $storefrontOrigin
+        ));
+
         $url = add_query_arg(
             array_filter([
-                // Only gets the page rendered. The proxy issues a session of
-                // its own behind it, and that is what actually carries the shop,
-                // the currency and the environment.
-                'client'   => StringUtil::generateRandomString(self::CLIENT_TOKEN_LENGTH),
+                'client'   => $client,
                 'checkout' => 'yes',
                 'intent'   => 'capture',
                 'currency' => get_woocommerce_currency(),
