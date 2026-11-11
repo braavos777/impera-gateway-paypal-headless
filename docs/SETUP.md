@@ -113,10 +113,10 @@ screen changes nothing. Remember that if you are ever debugging a key mismatch.
 
 If neither the field nor the constant holds a key, the payment method does not appear at checkout.
 
-### 6a. Checkout flow, and 6b. Storefront origin
+### 6a. Checkout flow
 
-> Two fields added in 1.0.6. On the real screen they sit between **6 Proxy shared key** and
-> **7 Sandbox**; they are not in the screenshot above, and the numbering below is unchanged.
+> Added in 1.0.6. On the real screen it sits between **6 Proxy shared key** and
+> **7 Sandbox**; it is not in the screenshot above, and the numbering below is unchanged.
 
 **Checkout flow** decides where the customer pays:
 
@@ -125,15 +125,8 @@ If neither the field nor the constant holds a key, the payment method does not a
 - **Embedded buttons** — the PayPal buttons are framed inside a separate storefront, which pays
   without leaving the page.
 
-**Storefront origin** applies only to the embedded flow: the origin of the page that frames the
-buttons, with its scheme and, when it is not the default, its port — `https://shop.example.com` or
-`http://localhost:3000`. Leave it empty when the storefront is this WordPress site.
-
-Choosing **Embedded buttons** while this field is empty **hides the payment method at checkout**,
-because the frame could never be told what the order is worth.
-
 Embedded checkout is not a setting you can switch on by itself — it needs work on the storefront and
-the origin registered with the payment service. See **[EMBEDDED-CHECKOUT.md](EMBEDDED-CHECKOUT.md)**
+this shop's domain listed (by its exact host) with the payment service. See **[EMBEDDED-CHECKOUT.md](EMBEDDED-CHECKOUT.md)**
 for the full integration guide.
 
 ### 7. Sandbox
@@ -327,7 +320,6 @@ The payment method is only offered when the store currency is one of these:
 | 5 | Proxy domain | **Yes** | — |
 | 6 | Proxy shared key | **Yes** | — |
 | 6a | Checkout flow | — | Redirect |
-| 6b | Storefront origin | Only for embedded buttons | — |
 | 7 | Sandbox | — | Disabled |
 | 8 | Shipping address on PayPal | — | Do not show |
 | 9 | When the customer cancels on PayPal | — | Leave the order pending |

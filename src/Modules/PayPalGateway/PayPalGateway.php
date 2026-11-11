@@ -241,12 +241,6 @@ class PayPalGateway extends WC_Payment_Gateway
             return false;
         }
 
-        // Without an origin the proxy refuses to build the iframe link at all,
-        // so the method would render as a frame that never loads.
-        if ($this->gatewaySettings->isIframeFlow() && $this->gatewaySettings->getStorefrontOrigin() === '') {
-            return false;
-        }
-
         return $this->is_valid_for_use();
     }
 

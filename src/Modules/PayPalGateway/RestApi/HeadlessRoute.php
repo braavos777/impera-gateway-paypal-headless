@@ -24,6 +24,10 @@ use WP_REST_Response;
  * in the iframe's src anyway, and the session is a fresh random string. What it
  * does carry is the context the proxy needs to serve that page safely, and
  * every part of it is decided here rather than by the browser that loads it.
+ *
+ * The shop's domain is not in it: the shop is named by Utils::siteToken(), an
+ * HMAC under the shared key that the proxy resolves against its allowed list.
+ * The domain exists only between this server and the proxy.
  */
 class HeadlessRoute extends AbstractRoute
 {
@@ -71,17 +75,15 @@ class HeadlessRoute extends AbstractRoute
             ], 503);
         }
 
-        $storefrontOrigin = $wcSettings->getStorefrontOrigin();
+        $sharedKey = $wcSettings->getSharedKey();
 
-        // The bridge inside the frame accepts a handshake from this one origin
-        // and no other, so a link built without it is a frame that can never be
-        // told what the order is worth. Better a clear failure here than a
-        // checkout that loads and then refuses every click.
-        if ($storefrontOrigin === '') {
-            $this->logger->error('HeadlessRoute | pp-link requested but the storefront origin is not configured.');
+        // The site token is derived from it; without it the proxy could not
+        // tell which shop the frame is for.
+        if ($sharedKey === '') {
+            $this->logger->error('HeadlessRoute | pp-link requested but the shared key is not configured.');
 
             return new WP_REST_Response([
-                'code'    => 'impera_pph_no_storefront_origin',
+                'code'    => 'impera_pph_no_shared_key',
                 'message' => 'PayPal is not available right now.',
             ], 503);
         }
@@ -96,10 +98,9 @@ class HeadlessRoute extends AbstractRoute
         // The proxy logs the same client value when the frame is opened
         // ("PayPal Frame | link requested"), so the two logs line up.
         $this->logger->info(sprintf(
-            'HeadlessRoute | pp-link issued | client=%s proxy=%s storefront=%s',
+            'HeadlessRoute | pp-link issued | client=%s proxy=%s',
             $client,
-            $baseUrl,
-            $storefrontOrigin
+            $baseUrl
         ));
 
         $url = add_query_arg(
@@ -108,11 +109,8 @@ class HeadlessRoute extends AbstractRoute
                 'checkout' => 'yes',
                 'intent'   => 'capture',
                 'currency' => get_woocommerce_currency(),
-                // The shop, for the proxy's allow-list and its statistics.
-                'mid'      => Utils::base64Encode(Utils::homeDomain()),
-                // The storefront, which in a headless setup is a different
-                // origin from the shop and is what the bridge is pinned to.
-                'sfo'      => Utils::base64Encode($storefrontOrigin),
+                // The shop, as a token only the proxy can resolve.
+                'sk'       => Utils::siteToken($sharedKey),
                 'sandbox'  => $wcSettings->isSandbox() ? 'true' : null,
             ], static fn ($value) => $value !== null),
             $baseUrl . '/checkout'

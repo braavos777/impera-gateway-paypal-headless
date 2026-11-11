@@ -44,27 +44,23 @@ WooCommerce's own order total, signed (`CaptureOrderDto.php:20-29`,
 | **Proxy domain** | host only — `pay.example.com`. No scheme, no path, no port, no trailing slash |
 | **Proxy shared key** | as issued. `IMPERA_PPH_KEY` in `wp-config.php` overrides this field |
 | **Checkout flow** | **Embedded buttons — a headless storefront frames the proxy** |
-| **Storefront origin** | full origin of the page that frames the buttons, scheme included, and port when non-default: `https://shop.example.com`, `http://localhost:3000`. Leave empty only when the storefront *is* this WordPress site |
 | Sandbox | on for testing |
 | Store currency | must be one of `IMPERA_PPH_AVAILABLE_CURRENCIES` (`bootstrap.php:21-25`) |
 
 The method **hides itself** rather than failing later if any of these is wrong
 (`PayPalGateway.php:230-251`): empty proxy domain, empty shared key, unsupported
-currency, or **iframe flow with an empty storefront origin**. If PayPal is
-missing from the checkout, check those four first.
+currency. If PayPal is missing from the checkout, check those three first.
 
-Two notes on the storefront origin:
+**Also required, on the proxy, by the provider:** this shop's domain (the
+WordPress host, without `www.`) must be listed under **PayPal Redirect → Allowed
+Domains** by its **exact** host — a `*.example.com` wildcard does not cover the
+embedded flow, and an empty list allows nothing. Without it the proxy does not
+serve the frame.
 
-- It is compared literally on the proxy — scheme and port are part of it. A bare
-  host will never match.
-- It is truncated to **54 characters** in transit (`Utils.php:276-286`). A longer
-  origin is silently cut and the comparison fails with no diagnostic.
-
-**Also required, on the proxy, by the provider:** the same origin must be
-registered under **PayPal Redirect → Storefronts**. The proxy turns it into its
-`frame-ancestors` CSP source and the `postMessage` target of the bridge. Without
-that registration the page loads and then refuses every click, or the browser
-blocks the frame outright.
+**The shop's domain never reaches the browser.** The iframe URL names the shop by
+an opaque `sk` token (an HMAC of the domain under the shared key) that only the
+proxy can resolve. The proxy sends no `frame-ancestors` and prints no origin into
+the frame; the frame hands its bridge to whatever page is its `window.parent`.
 
 ---
 
@@ -79,7 +75,7 @@ nothing from the request (`HeadlessRoute.php:54-117`, `:120-133`).
 
 ```json
 {
-  "url": "https://pay.example.com/checkout?client=…&checkout=yes&intent=capture&currency=USD&mid=…&sfo=…&sandbox=true",
+  "url": "https://pay.example.com/checkout?client=…&checkout=yes&intent=capture&currency=USD&sk=<64 hex>&sandbox=true",
   "origin": "https://pay.example.com"
 }
 ```
@@ -89,7 +85,7 @@ Errors are `503` with a `code`:
 | code | Meaning |
 |---|---|
 | `impera_pph_no_proxy_domain` | Proxy domain not configured |
-| `impera_pph_no_storefront_origin` | Storefront origin not configured (or unparseable) |
+| `impera_pph_no_shared_key` | Shared key not configured |
 
 Three rules:
 
@@ -189,7 +185,10 @@ The frame pings `{ __mj: 'ready' }` every 200 ms until it is answered, so
 attaching the listener late is safe. `connectFrame` never times out on its own —
 the caller owns that decision via `abort`.
 
-Never widen the origin check, and never `postMessage` to `'*'`.
+Never widen the origin check on the storefront side, and never `postMessage` to
+`'*'` from it. (The frame side does ping `'*'`: it does not know the storefront's
+origin, by design. The ping carries no data, and the frame accepts the port only
+from its own `window.parent`.)
 
 ### Envelope
 
@@ -412,15 +411,18 @@ frame-src https://pay.example.com;
 ```
 
 A missing `frame-src` gives you a **blank frame and no error in the UI** — only a
-violation in the console. The other direction (`frame-ancestors`) is set by the
-proxy from the storefront origin you configured in §1; you do not control it.
+violation in the console. The proxy sends no `frame-ancestors`.
+
+The `<iframe>` **must** carry `referrerpolicy="no-referrer"` (§6): otherwise the
+storefront's URL reaches the proxy page and, through it, PayPal.
 
 ---
 
 ## 8. Checklist
 
-- [ ] Gateway settings complete; **Checkout flow = Embedded buttons**; storefront origin exact, with scheme and port
-- [ ] Storefront origin registered on the proxy under *PayPal Redirect → Storefronts*
+- [ ] Gateway settings complete; **Checkout flow = Embedded buttons**
+- [ ] Shop domain listed on the proxy under *PayPal Redirect → Allowed Domains* by its exact host
+- [ ] `<iframe referrerpolicy="no-referrer">`
 - [ ] Store currency supported; sandbox on for testing
 - [ ] `pp-link` proxied through your own server, response validated, called **once** per checkout
 - [ ] `gbridge.ts` copied unmodified; origin compared with `===`
@@ -437,11 +439,12 @@ proxy from the storefront origin you configured in §1; you do not control it.
 
 | Symptom | Cause |
 |---|---|
-| PayPal missing from the payment methods | Empty proxy domain / shared key, unsupported currency, or iframe flow with empty storefront origin (`PayPalGateway.php:230-251`) |
-| `pp-link` returns 503 | Read the `code`: `impera_pph_no_proxy_domain` or `impera_pph_no_storefront_origin` |
-| Frame loads, handshake never happens | Origin mismatch — compare the configured storefront origin against the browser's origin character by character (scheme, port); check the 54-character truncation; confirm the origin is registered on the proxy |
-| Frame is blank, nothing in the UI | CSP `frame-src`, or proxy `frame-ancestors` — check the console |
-| Buttons render, every click is rejected | `impera-getOrder` returns `null`, or the origin is not on the proxy allow-list |
+| PayPal missing from the payment methods | Empty proxy domain / shared key, or unsupported currency (`PayPalGateway.php`, `is_available()`) |
+| `pp-link` returns 503 | Read the `code`: `impera_pph_no_proxy_domain` or `impera_pph_no_shared_key` |
+| Frame shows the proxy's own page instead of the buttons | The proxy did not recognise the `sk` token: shop domain not listed exactly under *Allowed Domains*, or the shared keys differ |
+| Frame loads, handshake never happens | `connectFrame` given the wrong proxy origin — use `origin` from `pp-link` as-is; check two `gbridge` copies have not drifted |
+| Frame is blank, nothing in the UI | CSP `frame-src` — check the console |
+| Buttons render, every click is rejected | `impera-getOrder` returns `null`, or the shop was removed from the proxy's allowed list while the page was open |
 | PayPal overlay is clipped / unclickable | `impera-makeFullIframe` not handled, or the full-screen CSS does not actually cover the page |
 | Buttons reload when switching payment method | `pp-link` is being re-fetched; guard it |
 | Order placed with no payment, or a duplicate PayPal order | The form was submitted without `impera-paypal-payment-order-id` — the gateway took the redirect branch |

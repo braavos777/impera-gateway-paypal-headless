@@ -193,6 +193,20 @@ final class Utils
         return strtolower(preg_replace('/^www\./i', '', $host));
     }
 
+    /**
+     * The shop's site token for the proxy's iframe link: an HMAC of
+     * homeDomain() under a key derived from the shared key. The domain itself
+     * never goes into the browser; the proxy finds it by computing the same
+     * token for every entry of its allowed list. Must match
+     * DomainGuard::siteToken() on the proxy byte for byte.
+     */
+    public static function siteToken(string $sharedKey): string
+    {
+        $key = hash_hkdf('sha256', $sharedKey, 32, 'impera-paypal/merchant-site-v1');
+
+        return hash_hmac('sha256', self::homeDomain(), $key);
+    }
+
     public static function buildDomain(string $domainNane): string
     {
         $domain = preg_replace('#^https?://#', '', $domainNane);

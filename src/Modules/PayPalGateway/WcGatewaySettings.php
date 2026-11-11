@@ -117,44 +117,6 @@ final class WcGatewaySettings
     }
 
     /**
-     * The origin of the page that frames the buttons.
-     *
-     * It is handed to the proxy, which makes it the postMessage target of the
-     * bridge and a frame-ancestors source, so it travels whole - scheme and
-     * port included. A bare host would never match: the bridge compares origins
-     * literally.
-     *
-     * Falls back to this site, which is right for a classic WooCommerce
-     * checkout and wrong for a headless one - hence the setting.
-     */
-    public function getStorefrontOrigin(): string
-    {
-        $origin = trim((string) $this->get('storefront_origin', ''));
-
-        if ($origin === '') {
-            $origin = (string) home_url();
-        }
-
-        $parts = wp_parse_url($origin);
-
-        if (!is_array($parts) || empty($parts['host']) || empty($parts['scheme'])) {
-            return '';
-        }
-
-        $scheme = strtolower((string) $parts['scheme']);
-
-        if (!in_array($scheme, ['http', 'https'], true)) {
-            return '';
-        }
-
-        $port    = isset($parts['port']) ? (int) $parts['port'] : 0;
-        $default = $scheme === 'https' ? 443 : 80;
-
-        return $scheme . '://' . strtolower((string) $parts['host'])
-            . ($port > 0 && $port !== $default ? ':' . $port : '');
-    }
-
-    /**
      * NO_SHIPPING keeps PayPal from showing an address at all;
      * SET_PROVIDED_ADDRESS shows the one the shop already collected;
      * GET_FROM_FILE lets the buyer choose - and change the total with it.
