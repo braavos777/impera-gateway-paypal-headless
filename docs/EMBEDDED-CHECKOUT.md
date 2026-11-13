@@ -42,13 +42,13 @@ WooCommerce's own order total, signed (`CaptureOrderDto.php:20-29`,
 |---|---|
 | Enable | on |
 | **Proxy domain** | host only — `pay.example.com`. No scheme, no path, no port, no trailing slash |
-| **Proxy shared key** | as issued. `IMPERA_PPH_KEY` in `wp-config.php` overrides this field |
+| **Shop key id / secret** | the key issued for this shop on the proxy (*Shop keys*, gateway `paypal_redirect`). `IMPERA_PPH_KEY_ID` / `IMPERA_PPH_SECRET` in `wp-config.php` override the fields |
 | **Checkout flow** | **Embedded buttons — a headless storefront frames the proxy** |
-| Sandbox | on for testing |
+| Sandbox | on for testing - a stored setting; nothing in the URL or the storefront can switch it |
 | Store currency | must be one of `IMPERA_PPH_AVAILABLE_CURRENCIES` (`bootstrap.php:21-25`) |
 
 The method **hides itself** rather than failing later if any of these is wrong
-(`PayPalGateway.php:230-251`): empty proxy domain, empty shared key, unsupported
+(`PayPalGateway.php`, `is_available()`): empty proxy domain, no shop key, unsupported
 currency. If PayPal is missing from the checkout, check those three first.
 
 **Also required, on the proxy, by the provider:** this shop's domain (the
@@ -57,9 +57,10 @@ Domains** by its **exact** host — a `*.example.com` wildcard does not cover th
 embedded flow, and an empty list allows nothing. Without it the proxy does not
 serve the frame.
 
-**The shop's domain never reaches the browser.** The iframe URL names the shop by
-an opaque `sk` token (an HMAC of the domain under the shared key) that only the
-proxy can resolve. The proxy sends no `frame-ancestors` and prints no origin into
+**The shop's domain never reaches the browser.** The iframe URL carries a one-time
+`session` token (64 hex, 30 minutes) that the shop's server opened on the proxy by a
+call signed with its own key; the proxy keeps which shop, which environment and which
+currency the page is for. The URL names no shop and cannot choose sandbox. The proxy sends no `frame-ancestors` and prints no origin into
 the frame; the frame hands its bridge to whatever page is its `window.parent`.
 
 ---
@@ -75,7 +76,7 @@ nothing from the request (`HeadlessRoute.php:54-117`, `:120-133`).
 
 ```json
 {
-  "url": "https://pay.example.com/checkout?client=…&checkout=yes&intent=capture&currency=USD&sk=<64 hex>&sandbox=true",
+  "url": "https://pay.example.com/checkout?client=…&checkout=yes&intent=capture&currency=USD&session=<64 hex>",
   "origin": "https://pay.example.com"
 }
 ```
@@ -85,7 +86,8 @@ Errors are `503` with a `code`:
 | code | Meaning |
 |---|---|
 | `impera_pph_no_proxy_domain` | Proxy domain not configured |
-| `impera_pph_no_shared_key` | Shared key not configured |
+| `impera_pph_no_shared_key` | Shop key not configured |
+| `impera_pph_no_session` | The proxy did not open a checkout session (key, mode or domain refused - see the proxy log) |
 
 Three rules:
 
@@ -440,8 +442,8 @@ storefront's URL reaches the proxy page and, through it, PayPal.
 | Symptom | Cause |
 |---|---|
 | PayPal missing from the payment methods | Empty proxy domain / shared key, or unsupported currency (`PayPalGateway.php`, `is_available()`) |
-| `pp-link` returns 503 | Read the `code`: `impera_pph_no_proxy_domain` or `impera_pph_no_shared_key` |
-| Frame shows the proxy's own page instead of the buttons | The proxy did not recognise the `sk` token: shop domain not listed exactly under *Allowed Domains*, or the shared keys differ |
+| `pp-link` returns 503 | Read the `code`: `impera_pph_no_proxy_domain`, `impera_pph_no_shared_key` or `impera_pph_no_session` |
+| Frame is empty (404) instead of the buttons | The session is unknown or expired (open the link within 30 minutes, one link per checkout), or the currency in the URL differs from the session's |
 | Frame loads, handshake never happens | `connectFrame` given the wrong proxy origin — use `origin` from `pp-link` as-is; check two `gbridge` copies have not drifted |
 | Frame is blank, nothing in the UI | CSP `frame-src` — check the console |
 | Buttons render, every click is rejected | `impera-getOrder` returns `null`, or the shop was removed from the proxy's allowed list while the page was open |

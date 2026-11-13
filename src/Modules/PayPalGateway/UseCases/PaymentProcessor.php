@@ -14,6 +14,7 @@ use ImperaPayPalHl\Modules\PayPalGateway\DTO\CaptureOrderDto;
 use ImperaPayPalHl\Modules\PayPalGateway\DTO\CreateOrderDto;
 use ImperaPayPalHl\Modules\PayPalGateway\DTO\OrderStatusDto;
 use ImperaPayPalHl\Modules\PayPalGateway\Exceptions\PaymentProcessException;
+use ImperaPayPalHl\Modules\PayPalGateway\Exceptions\PaymentUnknownException;
 use ImperaPayPalHl\Modules\PayPalGateway\Responses\CreateOrderResponse;
 use ImperaPayPalHl\Modules\PayPalGateway\Responses\PaymentResponse;
 use ImperaPayPalHl\Modules\PayPalGateway\WcGatewaySettings;
@@ -119,18 +120,9 @@ final class PaymentProcessor
             $dto->jsonSerialize()
         );
 
-        if (is_wp_error($response)) {
-            $message = 'PayPal order status request error: ' . $response->get_error_message();
-
-            $order->add_order_note($message);
-            $this->logger->error($message);
-
-            return PaymentResponse::failed($ppOrderId, $order->get_id(), $message);
-        }
-
-        $this->logger->debug('Order status Response: ' , Utils::getResponseJson($response));
-
-        return PaymentResponse::fromArray(Utils::getResponseJson($response));
+        // The status read captures an approved order: an answer that did not
+        // arrive says nothing about the money (readAnswer).
+        return $this->readAnswer($order, $response, 'order status');
     }
 
     /**
@@ -172,18 +164,7 @@ final class PaymentProcessor
             $dto->jsonSerialize()
         );
 
-        if (is_wp_error($response)) {
-            $message = 'PayPal capture order request error: ' . $response->get_error_message();
-
-            $order->add_order_note($message);
-            $this->logger->error($message);
-
-            return PaymentResponse::failed($ppOrderId, $order->get_id(), $message);
-        }
-
-        $this->logger->debug('Capture order Response: ', Utils::getResponseJson($response));
-
-        return PaymentResponse::fromArray(Utils::getResponseJson($response));
+        return $this->readAnswer($order, $response, 'capture');
     }
 
     /**
@@ -202,6 +183,7 @@ final class PaymentProcessor
         $order->update_meta_data(IMPERA_WC_ORDER_PPH_ORDER_ID, $ppOrderId);
         $order->update_meta_data(IMPERA_WC_ORDER_PPH_MODE, $settings->getMode());
         $order->update_meta_data(IMPERA_WC_ORDER_PPH_CURRENCY, $order->get_currency());
+        $order->update_meta_data(PaymentReconciler::META_FLOW, 'iframe');
 
         if ($paymentSource !== '') {
             $order->update_meta_data(IMPERA_WC_ORDER_PPH_PAYMENT_SOURCE, $paymentSource);
@@ -258,6 +240,51 @@ final class PaymentProcessor
     /**
      * What the order has to remember to be able to finish, or refund, later.
      */
+    /**
+     * The proxy's answer to a call in which PayPal may collect the money:
+     *  - 200 with a payment status: the answer, for OrderCompletionService;
+     *  - 4xx (not 408/409/429): a definite refusal - nothing was read or moved
+     *    for this request (wrong shop, order or environment) -> PaymentProcessException;
+     *  - no answer, 5xx, 502 outcome_unknown, 408/409/429, or a body that cannot
+     *    be read: the money may have moved -> PaymentUnknownException, the order
+     *    is held and reconciled, never failed.
+     */
+    private function readAnswer(WC_Order $order, array|WP_Error $response, string $label): PaymentResponse
+    {
+        if (is_wp_error($response)) {
+            $message = sprintf('PayPal %s request error: %s', $label, $response->get_error_message());
+            $this->logger->error($message);
+
+            throw new PaymentUnknownException($message);
+        }
+
+        $status = (int) wp_remote_retrieve_response_code($response);
+        $body   = Utils::getResponseJson($response);
+
+        $this->logger->debug(sprintf('PayPal %s response (HTTP %d): ', $label, $status), $body);
+
+        if ($status === 200 && (string) ($body['payment_status'] ?? '') !== '') {
+            return PaymentResponse::fromArray($body);
+        }
+
+        $code    = (string) ($body['error_code'] ?? '');
+        $message = sprintf('PayPal %s: HTTP %d %s %s', $label, $status, $code, (string) ($body['error_message'] ?? ''));
+
+        if ($status >= 400 && $status < 500 && !in_array($status, [408, 409, 429], true)) {
+            $order->add_order_note($message);
+            $this->logger->error($message);
+
+            throw new PaymentProcessException(
+                'We could not verify your payment, please contact us before trying again.',
+                'RC-PX' . $status
+            );
+        }
+
+        $this->logger->error($message);
+
+        throw new PaymentUnknownException($message);
+    }
+
     private function rememberOrder(
         WC_Order $order,
         string $proxyDomain,
@@ -268,6 +295,7 @@ final class PaymentProcessor
         $order->update_meta_data(IMPERA_WC_ORDER_PPH_ORDER_ID, (string) $createResponse->getPpOrderId());
         $order->update_meta_data(IMPERA_WC_ORDER_PPH_MODE, $mode);
         $order->update_meta_data(IMPERA_WC_ORDER_PPH_CURRENCY, $order->get_currency());
+        $order->update_meta_data(PaymentReconciler::META_FLOW, 'redirect');
 
         if ($createResponse->getApproveUrl()) {
             $order->update_meta_data(IMPERA_WC_ORDER_PPH_APPROVE_URL, $createResponse->getApproveUrl());

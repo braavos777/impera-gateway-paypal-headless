@@ -15,7 +15,7 @@ Have these ready before you open the settings screen:
 | **WooCommerce, active** | The plugin does nothing at all if WooCommerce is not active. |
 | **PHP 8.1 or newer** | The plugin uses PHP 8.1 language features and will not load on older versions. |
 | **A supported store currency** | See [Appendix A](#appendix-a--supported-currencies). If your store currency is not on the list, the payment method hides itself at checkout and no setting can bring it back. |
-| **Your connection details** | The **host name** and the **shared key** you were issued. You cannot complete the setup without both. |
+| **Your connection details** | The **host name** and the **shop key** (key id `mk_…` + secret) issued for your shop. You cannot complete the setup without both. |
 
 ---
 
@@ -90,10 +90,10 @@ with the host you were actually given.
 
 If this field is empty, the payment method does not appear at checkout.
 
-### 6. Proxy shared key — required
+### 6. Shop key (key id and secret) — required
 
-The secret key used to authenticate communication between your shop and the payment service. Paste
-the key exactly as issued.
+The key issued for your shop alone on the payment service (*Shop keys*): a key id `mk_…` and a secret.
+Every request is signed with it; there is no shared key. Paste both exactly as issued.
 
 - Copy and paste it — do not retype it
 - No leading or trailing spaces, no line breaks

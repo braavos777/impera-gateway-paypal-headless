@@ -8,12 +8,9 @@ use DateTimeImmutable;
 use DateTimeZone;
 use Exception;
 use Countable;
-use WP_REST_Request;
 
 final class Utils
 {
-
-
 
     public static function nowTime(): DateTimeImmutable
     {
@@ -193,24 +190,6 @@ final class Utils
         return strtolower(preg_replace('/^www\./i', '', $host));
     }
 
-    /**
-     * The shop's site token for the proxy's iframe link: an HMAC of
-     * homeDomain() under a key derived from the shared key. The domain itself
-     * never goes into the browser; the proxy finds it by computing the same
-     * token for every entry of its allowed list. Must match
-     * DomainGuard::siteToken() on the proxy byte for byte.
-     */
-    public static function siteToken(string $sharedKey): string
-    {
-        if ($sharedKey === '') {
-            return '';
-        }
-
-        $key = hash_hkdf('sha256', $sharedKey, 32, 'impera-paypal/merchant-site-v1');
-
-        return hash_hmac('sha256', self::homeDomain(), $key);
-    }
-
     public static function buildDomain(string $domainNane): string
     {
         $domain = preg_replace('#^https?://#', '', $domainNane);
@@ -291,18 +270,6 @@ final class Utils
         return $result;
     }
 
-    public static function base64Encode($value): string
-    {
-        $truncated = mb_substr($value, 0, 54, 'UTF-8');
-
-        return base64_encode(strtr(base64_encode($truncated), './-:?=&%# ZQXJKVWPY abcdefghijklmnopqrstuvwxyz123456789ABCDEFGHILMNORSTU', 'ZQXJKVWPY ./-:?=&%# 123456789ABCDEFGHILMNORSTUabcdefghijklmnopqrstuvwxyz'));
-    }
-
-    public static function base64Decode($encodedValue): string
-    {
-        return base64_decode(strtr(base64_decode($encodedValue), 'ZQXJKVWPY ./-:?=&%# 123456789ABCDEFGHILMNORSTUabcdefghijklmnopqrstuvwxyz', './-:?=&%# ZQXJKVWPY abcdefghijklmnopqrstuvwxyz123456789ABCDEFGHILMNORSTU'));
-    }
-
     public static function isEmpty($value)
     {
         if (is_null($value)) {
@@ -328,54 +295,6 @@ final class Utils
     {
         return !self::isEmpty($value);
     }
-
-    public static function signRequest(array $payload, string $secret): string
-    {
-        $body = wp_json_encode($payload);
-
-        return hash_hmac('sha256', $body, $secret);
-    }
-
-    public static function isValidRequestSignature(WP_REST_Request $request, $secret): bool
-    {
-        // An unsigned probe is simply not authorised, and hash_equals refuses a
-        // null outright - which would turn every one of them into a fatal.
-        $signature = (string) $request->get_header('X-Signature');
-
-        if ($signature === '') {
-            return false;
-        }
-
-        $body = $request->get_body();
-
-        $expected = hash_hmac(
-            'sha256',
-            $body,
-            $secret
-        );
-
-        return hash_equals($expected, $signature);
-    }
-
-    public static function isValidResponseSignature($response, string $secret): bool
-    {
-        $signature = wp_remote_retrieve_header($response, 'X-Signature');
-
-        if (empty($signature)) {
-            return false;
-        }
-
-        $body = wp_remote_retrieve_body($response);
-
-        $expected = hash_hmac(
-            'sha256',
-            $body,
-            $secret
-        );
-
-        return hash_equals($expected, $signature);
-    }
-
 
     public static function getResponseJson( $response ): array
     {

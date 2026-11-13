@@ -88,8 +88,29 @@ final class OrderCompletionService
         return $order;
     }
 
+    public const OPERATION_MISMATCH = 'operation_mismatch';
+    public const MODE_MISMATCH      = 'mode_mismatch';
+    public const CURRENCY_MISMATCH  = 'currency_mismatch';
+    public const AMOUNT_MISMATCH    = 'amount_mismatch';
+    public const INCOMPLETE_RESULT  = 'incomplete_result';
+    public const STATUS_CONFLICT    = 'status_conflict';
+
     private function apply(WC_Order $order, PaymentResponse $paymentResponse, string $source): bool
     {
+        // The operation first, for every result - a refund, a decline or a
+        // payment alike: this gateway, this WooCommerce order, the PayPal order
+        // stored on it, the environment it was made in. Money is checked below
+        // for results that put money on the order.
+        $reason = $this->validate($order, $paymentResponse, false);
+
+        if ($reason === null && $paymentResponse->isPaid()) {
+            $reason = $this->validate($order, $paymentResponse, true);
+        }
+
+        if ($reason !== null) {
+            return $this->refuse($order, $paymentResponse, $source, $reason);
+        }
+
         // Checked before is_paid(): a refund is news precisely about an order
         // that was paid, and returning early on those would drop every refund
         // made in the PayPal dashboard.
@@ -139,6 +160,103 @@ final class OrderCompletionService
             $paymentResponse->isFailed()         => $this->fail($order, $paymentResponse, $source),
             default                              => $this->noteOnly($order, $paymentResponse, $source),
         };
+    }
+
+    /**
+     * Null when the result belongs to this order and agrees with it, otherwise
+     * the reason. A missing field is never read as success.
+     */
+    private function validate(WC_Order $order, PaymentResponse $response, bool $checkMoney): ?string
+    {
+        if ($order->get_payment_method() !== IMPERA_PPH_GATEWAY_ID) {
+            return self::OPERATION_MISMATCH;
+        }
+
+        if ((int) $response->getWcOrderId() !== $order->get_id()) {
+            return self::OPERATION_MISMATCH;
+        }
+
+        $storedPpOrder = (string) $order->get_meta(IMPERA_WC_ORDER_PPH_ORDER_ID);
+
+        if ($storedPpOrder === '' || $response->getPpOrderId() === '' || !hash_equals($storedPpOrder, $response->getPpOrderId())) {
+            return self::OPERATION_MISMATCH;
+        }
+
+        $mode       = $response->getMode();
+        $storedMode = (string) $order->get_meta(IMPERA_WC_ORDER_PPH_MODE);
+
+        if (!in_array($mode, ['sandbox', 'production'], true)) {
+            return self::INCOMPLETE_RESULT;
+        }
+
+        if ($storedMode === '' || $mode !== $storedMode) {
+            return self::MODE_MISMATCH;
+        }
+
+        if (!$checkMoney) {
+            return null;
+        }
+
+        // "paid" with success:false is a contradiction, not a payment.
+        if (!$response->isSuccess()) {
+            return self::STATUS_CONFLICT;
+        }
+
+        $currency = $response->getCurrency();
+
+        if (preg_match('/^[A-Z]{3}$/', $currency) !== 1 || (string) $response->getCaptureId() === '') {
+            return self::INCOMPLETE_RESULT;
+        }
+
+        if ($currency !== strtoupper((string) $order->get_currency())) {
+            return self::CURRENCY_MISMATCH;
+        }
+
+        if ($response->grossAmountMinor() <= 0) {
+            return self::INCOMPLETE_RESULT;
+        }
+
+        if (!$this->amountMatchesOrder($order, $response)) {
+            return self::AMOUNT_MISMATCH;
+        }
+
+        return null;
+    }
+
+    /**
+     * Not applied. A paid or closed order keeps everything it has - a note
+     * only; an unpaid one goes on hold for a human when the result speaks of
+     * money, and nothing ships. No automatic refund: a wrong binding would
+     * refund someone else's payment.
+     */
+    private function refuse(WC_Order $order, PaymentResponse $response, string $source, string $reason): bool
+    {
+        $note = sprintf(
+            'PayPal result NOT applied (%s): %s. PayPal order %s, capture %s, %s %s, mode %s, status %s.',
+            $source,
+            $reason,
+            $response->getPpOrderId() ?: '-',
+            (string) ($response->getCaptureId() ?: '-'),
+            $response->grossAmount(),
+            $response->getCurrency() ?: '-',
+            $response->getMode() ?: '-',
+            $response->getPaymentStatus() ?: '-'
+        );
+
+        $this->logger->error(sprintf('Order %d: %s', $order->get_id(), $note));
+
+        if (!$order->is_paid() && !$order->has_status(['cancelled', 'refunded'])
+            && ($response->isPaid() || $response->isPending())) {
+            $order->has_status('on-hold')
+                ? $order->add_order_note($note . ' Manual reconciliation required.')
+                : $order->update_status('on-hold', $note . ' Manual reconciliation required.');
+
+            return false;
+        }
+
+        $order->add_order_note($note);
+
+        return false;
     }
 
     /**

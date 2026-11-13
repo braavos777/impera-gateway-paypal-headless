@@ -8,6 +8,7 @@ declare(strict_types=1);
 namespace ImperaPayPalHl\Modules\PayPalGateway\UseCases;
 
 use ImperaPayPalHl\Core\Contract\LoggerInterface;
+use ImperaPayPalHl\Modules\PayPalGateway\Exceptions\PaymentUnknownException;
 use ImperaPayPalHl\Modules\PayPalGateway\WcGatewaySettings;
 use Throwable;
 use WC_Order;
@@ -78,8 +79,23 @@ final class ReturnProcessor
         try {
             // The proxy captures an approved order as part of answering this, so
             // it is the same call that collects the money.
-            $paymentResponse = $this->paymentProcessor->fetchOrderStatus($order, $ppOrderId, $mode, true);
+            // The environment the order was created in, never the one the
+            // return link names: the validator then also checks PayPal's answer.
+            $storedMode = (string) $order->get_meta(IMPERA_WC_ORDER_PPH_MODE);
+
+            if ($storedMode !== $mode) {
+                $order->add_order_note(sprintf('PayPal return names %s but the order was made in %s - ignored.', $mode, $storedMode ?: '-'));
+                $this->redirectToThankYou($order);
+            }
+
+            $paymentResponse = $this->paymentProcessor->fetchOrderStatus($order, $ppOrderId, $storedMode, true);
             do_action('impera_gateway_paypal_headless_return_payment_status', $order, $paymentResponse, $query);
+        } catch (PaymentUnknownException $e) {
+            // The money may have moved: held and reconciled, never failed -
+            // the buyer sees the order page, not "pay again".
+            ImperaPPHContainer()->get(PaymentReconciler::class)->markUnknown($order, $e->getMessage());
+            $this->clearCart();
+            $this->redirectToThankYou($order);
         } catch (Throwable $e) {
             $order->add_order_note($e->getMessage());
             $this->logger->error($e->getMessage());

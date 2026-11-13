@@ -116,9 +116,18 @@ final class PaymentUpdateRoute extends AbstractRoute
             return null;
         }
 
+        // This gateway's order only, and bound to a PayPal order: a push for an
+        // order of another gateway, or for one that never stored its PayPal
+        // order, is not applied to anything.
+        if ($order->get_payment_method() !== IMPERA_PPH_GATEWAY_ID) {
+            $this->logger->error(sprintf('PayPal payment-update: order %d is not a PayPal Headless order.', $wcOrderId));
+
+            return null;
+        }
+
         $storedOrderId = (string) $order->get_meta(IMPERA_WC_ORDER_PPH_ORDER_ID);
 
-        if ($ppOrderId !== '' && $storedOrderId !== '' && !hash_equals($storedOrderId, $ppOrderId)) {
+        if ($ppOrderId === '' || $storedOrderId === '' || !hash_equals($storedOrderId, $ppOrderId)) {
             $this->logger->error(sprintf(
                 'PayPal payment-update: PayPal order mismatch for WC order %d (stored %s, got %s).',
                 $wcOrderId,

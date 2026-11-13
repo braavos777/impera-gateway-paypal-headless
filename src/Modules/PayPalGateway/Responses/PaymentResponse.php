@@ -55,7 +55,9 @@ final class PaymentResponse
 
     public static function fromArray(array $data): self
     {
-        $currency = strtoupper((string) ($data['currency'] ?? get_woocommerce_currency()));
+        // Nothing missing is filled in: no currency, no mode and no status is
+        // ever assumed - the validator refuses an answer without them.
+        $currency = strtoupper(trim((string) ($data['currency'] ?? '')));
 
         return new self(
             success:             (bool) ($data['success'] ?? false),
@@ -66,7 +68,7 @@ final class PaymentResponse
             captureId:           $data['capture_id'] ?? $data['transaction_id'] ?? null,
             orderStatus:         $data['order_status'] ?? null,
             captureStatus:       $data['capture_status'] ?? null,
-            paymentStatus:       (string) ($data['payment_status'] ?? self::STATUS_UNPAID),
+            paymentStatus:       (string) ($data['payment_status'] ?? ''),
             paymentSource:       $data['payment_source'] ?? null,
             currency:            $currency,
             grossAmountMinor:    Calculator::toMinor($data['gross_amount'] ?? 0, $currency),
@@ -74,7 +76,7 @@ final class PaymentResponse
             netAmountMinor:      Calculator::toMinor($data['net_amount'] ?? 0, $currency),
             refundedAmountMinor: Calculator::toMinor($data['refunded_amount'] ?? 0, $currency),
             createTime:          $data['create_time'] ?? null,
-            mode:                (string) ($data['mode'] ?? 'production'),
+            mode:                (string) ($data['mode'] ?? ''),
             approveUrl:          $data['approve_url'] ?? null,
             errorMessage:        $data['error_message'] ?? null,
             payerDetails:        is_array($data['payer_details'] ?? null) ? $data['payer_details'] : [],

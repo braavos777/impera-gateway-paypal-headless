@@ -11,6 +11,7 @@ namespace ImperaPayPalHl\Modules\PayPalGateway\RestApi;
 use ImperaPayPalHl\Core\Contract\LoggerInterface;
 use ImperaPayPalHl\Core\RestApi\Action;
 use ImperaPayPalHl\Core\RestApi\Contract\AbstractRoute;
+use ImperaPayPalHl\Core\Support\ShopKey;
 use ImperaPayPalHl\Core\Support\StringUtil;
 use ImperaPayPalHl\Core\Support\Utils;
 use ImperaPayPalHl\Modules\PayPalGateway\WcGatewaySettings;
@@ -75,12 +76,10 @@ class HeadlessRoute extends AbstractRoute
             ], 503);
         }
 
-        $sharedKey = $wcSettings->getSharedKey();
-
-        // The site token is derived from it; without it the proxy could not
-        // tell which shop the frame is for.
-        if ($sharedKey === '') {
-            $this->logger->error('HeadlessRoute | pp-link requested but the shared key is not configured.');
+        // The session is opened by a call signed with this shop's own key;
+        // without the key there is nothing to open it with.
+        if (!ShopKey::isConfigured()) {
+            $this->logger->error('HeadlessRoute | pp-link requested but the shop key is not configured.');
 
             return new WP_REST_Response([
                 'code'    => 'impera_pph_no_shared_key',
@@ -103,18 +102,45 @@ class HeadlessRoute extends AbstractRoute
             $baseUrl
         ));
 
-        $url = add_query_arg(
-            array_filter([
-                'client'   => $client,
-                'checkout' => 'yes',
-                'intent'   => 'capture',
-                'currency' => get_woocommerce_currency(),
-                // The shop, as a token only the proxy can resolve.
-                'sk'       => Utils::siteToken($sharedKey),
-                'sandbox'  => $wcSettings->isSandbox() ? 'true' : null,
-            ], static fn ($value) => $value !== null),
-            $baseUrl . '/checkout'
-        );
+        $currency = get_woocommerce_currency();
+
+        // One-time checkout session, opened server to server: the proxy records
+        // which shop (this key's), which environment (this stored setting) and
+        // which currency the page is for, and answers with a random token. The
+        // link carries that token only - nothing in it names the shop or lets
+        // the browser pick sandbox.
+        $answer = ShopKey::post($baseUrl . '/?rest_route=/impera-proxy-payment/v1/paypal-redirect/checkout-session', [
+            'mode'          => $wcSettings->getMode(),
+            'currency'      => $currency,
+            'checkout_ref'  => $client,
+            'merchant_site' => Utils::homeDomain(),
+        ], 15);
+
+        $token = '';
+
+        if (!is_wp_error($answer) && (int) wp_remote_retrieve_response_code($answer) === 200) {
+            $token = (string) (Utils::getResponseJson($answer)['token'] ?? '');
+        }
+
+        if (preg_match('/^[a-f0-9]{64}$/', $token) !== 1) {
+            $this->logger->error(sprintf(
+                'HeadlessRoute | the proxy did not open a checkout session (%s)',
+                is_wp_error($answer) ? $answer->get_error_message() : 'HTTP ' . wp_remote_retrieve_response_code($answer)
+            ));
+
+            return new WP_REST_Response([
+                'code'    => 'impera_pph_no_session',
+                'message' => 'PayPal is not available right now.',
+            ], 503);
+        }
+
+        $url = add_query_arg([
+            'client'   => $client,
+            'checkout' => 'yes',
+            'intent'   => 'capture',
+            'currency' => $currency,
+            'session'  => $token,
+        ], $baseUrl . '/checkout');
 
         return new WP_REST_Response([
             'url' => $url,

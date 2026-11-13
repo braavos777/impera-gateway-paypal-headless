@@ -9,6 +9,8 @@ namespace ImperaPayPalHl\Modules\PayPalGateway;
 
 use ImperaPayPalHl\Core\Contract\LoggerInterface;
 use ImperaPayPalHl\Modules\PayPalGateway\Exceptions\PaymentProcessException;
+use ImperaPayPalHl\Modules\PayPalGateway\Exceptions\PaymentUnknownException;
+use ImperaPayPalHl\Modules\PayPalGateway\UseCases\PaymentReconciler;
 use ImperaPayPalHl\Modules\PayPalGateway\Exceptions\RefundProcessException;
 use ImperaPayPalHl\Modules\PayPalGateway\UseCases\OrderCompletionService;
 use ImperaPayPalHl\Modules\PayPalGateway\UseCases\PaymentProcessor;
@@ -178,12 +180,23 @@ class PayPalGateway extends WC_Payment_Gateway
         $paymentSource = $_POST['impera-paypal-payment-source'] ?? '';
         $paymentSource = is_scalar($paymentSource) ? wc_clean(wp_unslash((string) $paymentSource)) : '';
 
-        $paymentResponse = $this->paymentProcessor->captureFrameOrder(
-            $order,
-            $ppOrderId,
-            $paymentSource,
-            $this->gatewaySettings
-        );
+        try {
+            $paymentResponse = $this->paymentProcessor->captureFrameOrder(
+                $order,
+                $ppOrderId,
+                $paymentSource,
+                $this->gatewaySettings
+            );
+        } catch (PaymentUnknownException $e) {
+            // The capture may have taken the money: hold and reconcile, never
+            // fail - a failed order invites the buyer to pay a second time.
+            ImperaPPHContainer()->get(PaymentReconciler::class)->markUnknown($order, $e->getMessage());
+
+            return [
+                'result'   => 'success',
+                'redirect' => $this->get_return_url($order),
+            ];
+        }
 
         /** @var OrderCompletionService $completionService */
         $completionService = ImperaPPHContainer()->get(OrderCompletionService::class);
