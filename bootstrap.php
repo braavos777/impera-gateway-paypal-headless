@@ -7,7 +7,7 @@ if (!defined('ABSPATH')) {
 define('IMPERA_PPH_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('IMPERA_PPH_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('IMPERA_PPH_PLUGIN_NAME', 'impera-gateway-paypal-headless');
-define('IMPERA_PPH_PLUGIN_VERSION', '1.0.9');
+define('IMPERA_PPH_PLUGIN_VERSION', '1.1.0');
 
 const IMPERA_PPH_REST_BASE_URL = IMPERA_PPH_PLUGIN_NAME . '/v1';
 
