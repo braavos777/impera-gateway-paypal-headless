@@ -87,7 +87,15 @@ final class ReturnProcessor
             $this->failAndRedirect($order, 'We cannot confirm your payment right now, please contact us.');
         }
 
-        $settled = $this->orderCompletion->complete($order, $paymentResponse, 'customer-return');
+        try {
+            $settled = $this->orderCompletion->complete($order, $paymentResponse, 'customer-return');
+        } catch (Throwable $e) {
+            // The other writer (the proxy's push) is applying the same payment:
+            // the order page shows whatever it settles to.
+            $this->logger->error($e->getMessage());
+            $this->clearCart();
+            $this->redirectToThankYou($order);
+        }
 
         if ($settled) {
             $this->clearCart();

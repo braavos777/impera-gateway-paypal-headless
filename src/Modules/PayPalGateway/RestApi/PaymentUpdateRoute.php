@@ -78,7 +78,7 @@ final class PaymentUpdateRoute extends AbstractRoute
             return new WP_REST_Response([
                 'success'     => $settled,
                 'wc_order_id' => $order->get_id(),
-                'status'      => $order->get_status(),
+                'status'      => (wc_get_order($order->get_id()) ?: $order)->get_status(),
             ], 200);
         } catch (Throwable $e) {
             $this->logger->error(sprintf(

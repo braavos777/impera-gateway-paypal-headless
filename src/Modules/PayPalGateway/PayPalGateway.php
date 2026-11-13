@@ -113,7 +113,28 @@ class PayPalGateway extends WC_Payment_Gateway
 
         wc_add_notice($message, 'error');
 
-        $order->update_status('failed');
+        // Re-read before failing it: a push may have settled this order while
+        // this request was busy, and a paid order is never sent back.
+        clean_post_cache($order->get_id());
+        wp_cache_delete($order->get_id(), 'orders');
+        wp_cache_delete('order-' . $order->get_id(), 'orders');
+        // HPOS keeps orders in its own cache under prefixed keys the deletes
+        // above never reach: without this the "fresh" read is the copy this
+        // request loaded before it took the lock.
+        if (class_exists(\Automattic\WooCommerce\Caches\OrderCache::class)) {
+            wc_get_container()->get(\Automattic\WooCommerce\Caches\OrderCache::class)->remove($order->get_id());
+        }
+
+        $fresh = wc_get_order($order->get_id());
+
+        if ($fresh instanceof WC_Order && $fresh->is_paid()) {
+            return [
+                'result'   => 'success',
+                'redirect' => $this->get_return_url($fresh),
+            ];
+        }
+
+        ($fresh instanceof WC_Order ? $fresh : $order)->update_status('failed');
 
         return [
             'result'   => 'failure',

@@ -10,6 +10,7 @@ namespace ImperaPayPalHl\Modules\PayPalGateway\UseCases;
 use ImperaPayPalHl\Core\Contract\LoggerInterface;
 use ImperaPayPalHl\Modules\PayPalGateway\Responses\PaymentResponse;
 use ImperaPayPalHl\Modules\PayPalGateway\Support\Calculator;
+use RuntimeException;
 use WC_Order;
 
 /**
@@ -19,9 +20,17 @@ use WC_Order;
  * coming back through the browser, or the proxy's push landing after they closed
  * the tab. Keeping it in one place is what makes those two paths agree - and
  * what makes running twice harmless.
+ *
+ * The two often arrive in the same second. Each one is applied under a
+ * per-order MySQL lock (atomic, released with the connection if PHP dies) to
+ * an order read fresh from storage, so the second sees the first one's work:
+ * one payment_complete(), one set of meta rows, never a paid order sent back.
  */
 final class OrderCompletionService
 {
+    /** Seconds a writer waits for the other one to finish. */
+    private const LOCK_TIMEOUT = 20;
+
     private LoggerInterface $logger;
 
     public function __construct()
@@ -36,6 +45,50 @@ final class OrderCompletionService
      * @param string $source Where the confirmation came from, for the note trail.
      */
     public function complete(WC_Order $order, PaymentResponse $paymentResponse, string $source): bool
+    {
+        global $wpdb;
+
+        $orderId = $order->get_id();
+        $lock    = 'impera_pph_order_' . $orderId;
+
+        if ((int) $wpdb->get_var($wpdb->prepare('SELECT GET_LOCK(%s, %d)', $lock, self::LOCK_TIMEOUT)) !== 1) {
+            throw new RuntimeException(sprintf('Order %d is busy (lock timeout) - PayPal result not applied (%s).', $orderId, $source));
+        }
+
+        try {
+            return $this->apply($this->fresh($orderId), $paymentResponse, $source);
+        } finally {
+            $wpdb->query($wpdb->prepare('SELECT RELEASE_LOCK(%s)', $lock));
+        }
+    }
+
+    /**
+     * Straight from storage, not from the object cache or the caller's copy:
+     * another request may have settled the order a moment ago.
+     */
+    private function fresh(int $orderId): WC_Order
+    {
+        clean_post_cache($orderId);
+        wp_cache_delete($orderId, 'orders');
+        wp_cache_delete('order-' . $orderId, 'orders');
+
+        // HPOS keeps orders in its own cache under prefixed keys the deletes
+        // above never reach: without this the "fresh" read is the copy this
+        // request loaded before it took the lock.
+        if (class_exists(\Automattic\WooCommerce\Caches\OrderCache::class)) {
+            wc_get_container()->get(\Automattic\WooCommerce\Caches\OrderCache::class)->remove($orderId);
+        }
+
+        $order = wc_get_order($orderId);
+
+        if (!$order instanceof WC_Order) {
+            throw new RuntimeException(sprintf('Order %d not found.', $orderId));
+        }
+
+        return $order;
+    }
+
+    private function apply(WC_Order $order, PaymentResponse $paymentResponse, string $source): bool
     {
         // Checked before is_paid(): a refund is news precisely about an order
         // that was paid, and returning early on those would drop every refund
