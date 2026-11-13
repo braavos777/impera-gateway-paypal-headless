@@ -10,7 +10,7 @@ namespace ImperaPayPalHl\Modules\PayPalGateway\Hooks\Actions;
 use ImperaPayPalHl\Modules\PayPalGateway\WcGatewaySettings;
 
 /**
- * An enabled gateway with no shared key hides itself at the checkout, which on
+ * An enabled gateway with no shop key hides itself at the checkout, which on
  * its own looks like the plugin is broken. This says why.
  *
  * Only for a gateway that is actually switched on: a plugin sitting installed
@@ -40,7 +40,7 @@ final class MissingKeyNotice
         printf(
             '<div class="notice notice-error"><p><strong>%s</strong> %s <a href="%s">%s</a></p></div>',
             esc_html('Impera Gateway PayPal:'),
-            esc_html('no proxy shared key is configured, so PayPal is hidden at the checkout. Set the same key the proxy uses.'),
+            esc_html('no shop key for the proxy is configured, so PayPal is hidden at the checkout. Issue a key on the proxy ("Shop keys", PayPal Redirect / Headless) and enter the key id and secret.'),
             esc_url($this->settingsUrl()),
             esc_html('Open the gateway settings')
         );

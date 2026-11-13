@@ -7,6 +7,7 @@ declare(strict_types=1);
 
 namespace ImperaPayPalHl\Modules\PayPalGateway\UseCases;
 
+use ImperaPayPalHl\Core\Support\ShopKey;
 use ImperaPayPalHl\Core\Contract\LoggerInterface;
 use ImperaPayPalHl\Core\Support\Utils;
 use ImperaPayPalHl\Modules\PayPalGateway\DTO\RefundOrderDto;
@@ -57,23 +58,11 @@ final class RefundProcessor
             throw new RefundProcessException('The order has no PayPal proxy domain stored, refund is impossible.');
         }
 
-        $sharedKey = $this->settings->getSharedKey();
-
-        if ($sharedKey === '') {
-            throw new RefundProcessException('The PayPal gateway has no shared key configured, refund is impossible.');
+        if (!ShopKey::isConfigured()) {
+            throw new RefundProcessException('The PayPal gateway has no shop key configured, refund is impossible.');
         }
 
-        $body = (string) wp_json_encode($dto->jsonSerialize());
-
-        $response = wp_remote_post(Utils::buildDomain($proxyDomain) . self::ENDPOINT, [
-            'sslverify' => true,
-            'timeout'   => 45,
-            'headers'   => [
-                'Content-Type' => 'application/json',
-                'X-Signature'  => hash_hmac('sha256', $body, $sharedKey),
-            ],
-            'body' => $body,
-        ]);
+        $response = ShopKey::post(Utils::buildDomain($proxyDomain) . self::ENDPOINT, $dto->jsonSerialize(), 45);
 
         if (is_wp_error($response)) {
             $message = $response->get_error_message();

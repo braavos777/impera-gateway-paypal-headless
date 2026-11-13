@@ -7,6 +7,8 @@ declare(strict_types=1);
 
 namespace ImperaPayPalHl\Modules\PayPalGateway;
 
+use ImperaPayPalHl\Core\Support\ShopKey;
+
 /**
  * Reads the gateway's own WooCommerce settings row without going through
  * WC_Payment_Gateway, so a use case can ask for a setting without a gateway
@@ -58,11 +60,9 @@ final class WcGatewaySettings
      */
     public function getSharedKey(): string
     {
-        if (defined('IMPERA_PPH_KEY') && trim((string) IMPERA_PPH_KEY) !== '') {
-            return trim((string) IMPERA_PPH_KEY);
-        }
-
-        return trim((string) $this->get('shared_key', ''));
+        // This shop's own key (ShopKey): the secret only counts together with
+        // its key id - a secret alone could not sign a request the proxy accepts.
+        return ShopKey::isConfigured() ? ShopKey::secret() : '';
     }
 
     /**

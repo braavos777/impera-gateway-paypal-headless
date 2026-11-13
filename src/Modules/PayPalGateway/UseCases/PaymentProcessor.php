@@ -7,6 +7,7 @@ declare(strict_types=1);
 
 namespace ImperaPayPalHl\Modules\PayPalGateway\UseCases;
 
+use ImperaPayPalHl\Core\Support\ShopKey;
 use ImperaPayPalHl\Core\Contract\LoggerInterface;
 use ImperaPayPalHl\Core\Support\Utils;
 use ImperaPayPalHl\Modules\PayPalGateway\DTO\CaptureOrderDto;
@@ -336,29 +337,8 @@ final class PaymentProcessor
 
     private function post(string $url, array $payload): mixed
     {
-        // The proxy verifies the signature over the raw body, so the bytes that
-        // are signed and the bytes that are sent have to be the same ones.
-        $body = (string) wp_json_encode($payload);
-
-        $sharedKey = $this->settings->getSharedKey();
-
-        // A WP_Error rather than an exception: every caller already handles one,
-        // and a status read must not turn fatal over a missing setting.
-        if ($sharedKey === '') {
-            return new WP_Error(
-                'impera_pph_missing_shared_key',
-                'The PayPal gateway has no shared key configured.'
-            );
-        }
-
-        return wp_remote_post($url, [
-            'sslverify' => true,
-            'timeout'   => 45,
-            'headers'   => [
-                'Content-Type' => 'application/json',
-                'X-Signature'  => hash_hmac('sha256', $body, $sharedKey),
-            ],
-            'body' => $body,
-        ]);
+        // A WP_Error rather than an exception when the key is missing: every
+        // caller already handles one (ShopKey::post returns it).
+        return ShopKey::post($url, $payload, 45);
     }
 }

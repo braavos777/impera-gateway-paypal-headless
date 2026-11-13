@@ -7,6 +7,7 @@ declare(strict_types=1);
 
 namespace ImperaPayPalHl\Modules\PayPalGateway\RestApi;
 
+use ImperaPayPalHl\Core\Support\ShopKey;
 use ImperaPayPalHl\Core\Contract\LoggerInterface;
 use ImperaPayPalHl\Core\RestApi\Action;
 use ImperaPayPalHl\Core\RestApi\Contract\AbstractRoute;
@@ -133,15 +134,9 @@ final class PaymentUpdateRoute extends AbstractRoute
 
     public function permissionCallback(WP_REST_Request $request): bool
     {
-        $sharedKey = ImperaPPHContainer()->get(WcGatewaySettings::class)->getSharedKey();
-
-        // Fail closed: a shop that has not been given a key must not accept a
-        // push that marks one of its orders paid.
-        if ($sharedKey === '') {
-            return false;
-        }
-
-        return Utils::isValidRequestSignature($request, $sharedKey);
+        // Fail closed: without this shop's key nothing verifies, and a push that
+        // marks an order paid must never pass unverified (ShopKey::verify).
+        return ShopKey::verify($request);
     }
 
     /**

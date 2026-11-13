@@ -41,14 +41,18 @@ return [
                 'required'  => 'required'
             ],
         ],
-        'shared_key'            => [
-            'title'       => 'Proxy shared key <sup style="color: red">*</sup>',
-            'type'        => 'password',
-            'description' => 'It signs every request the shop sends and verifies every payment the proxy reports back, so it is kept here rather than in the plugin files. Defining <code>IMPERA_PPH_KEY</code> in <code>wp-config.php</code> overrides this field.',
+        'shop_key_id'           => [
+            'title'       => 'Shop key id <sup style="color: red">*</sup>',
+            'type'        => 'text',
+            'description' => 'Issued for this shop on the proxy ("Shop keys", gateway PayPal Redirect / Headless). Defining <code>IMPERA_PPH_KEY_ID</code> in <code>wp-config.php</code> overrides this field.',
             'default'     => '',
-            'custom_attributes' => [
-                'required'  => 'required'
-            ],
+            'placeholder' => 'mk_…',
+        ],
+        'shop_key_secret'       => [
+            'title'       => 'Shop key secret <sup style="color: red">*</sup>',
+            'type'        => 'password',
+            'description' => 'Shown once when the key is issued. It signs every request the shop sends and verifies every payment the proxy reports back. Defining <code>IMPERA_PPH_SECRET</code> in <code>wp-config.php</code> overrides this field.',
+            'default'     => '',
         ],
         'checkout_flow'         => [
             'title'       => 'Checkout flow',

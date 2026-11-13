@@ -202,6 +202,10 @@ final class Utils
      */
     public static function siteToken(string $sharedKey): string
     {
+        if ($sharedKey === '') {
+            return '';
+        }
+
         $key = hash_hkdf('sha256', $sharedKey, 32, 'impera-paypal/merchant-site-v1');
 
         return hash_hmac('sha256', self::homeDomain(), $key);
